@@ -1,0 +1,13 @@
+[package]
+name = "slim-ass"
+version = "0.1.0"
+authors = ["Bart Sekura <bart.sekura@gmail.com>"]
+edition = "2018"
+build = "build.rs"
+
+[build-dependencies]
+cmake = "0.1"
+pkg-config = "0.3"
+
+[dependencies]
+bitflags = "1.2.1"
