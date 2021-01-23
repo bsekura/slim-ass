@@ -36,6 +36,24 @@ pub struct AiVector3D {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AiVector4D {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub w: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AiMatrix4x4 {
+    pub x: AiVector4D,
+    pub y: AiVector4D,
+    pub z: AiVector4D,
+    pub w: AiVector4D,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AiAABB {
     pub min: AiVector3D,
     pub max: AiVector3D,
@@ -113,6 +131,33 @@ pub struct AiMaterial {
     pub num_allocated: c_uint,
 }
 
+#[repr(C)]
+pub struct AiAnimMesh {
+    pub name: AiString,              //C_STRUCT aiString mName;
+    pub vertices: *mut AiVector3D,   //C_STRUCT aiVector3D *mVertices;
+    pub normals: *mut AiVector3D,    //C_STRUCT aiVector3D *mNormals;
+    pub tangents: *mut AiVector3D,   //C_STRUCT aiVector3D *mTangents;
+    pub bitangents: *mut AiVector3D, //C_STRUCT aiVector3D *mBitangents;
+    pub colors: [*mut AiColor4D; AI_MAX_NUMBER_OF_COLOR_SETS], //C_STRUCT aiColor4D *mColors[AI_MAX_NUMBER_OF_COLOR_SETS];
+    pub texture_coords: [*mut AiVector3D; AI_MAX_NUMBER_OF_TEXTURECOORDS], //C_STRUCT aiVector3D *mTextureCoords[AI_MAX_NUMBER_OF_TEXTURECOORDS];
+    pub num_vertices: c_uint, //unsigned int mNumVertices;
+    pub weight: f32,          //float mWeight;
+}
+
+#[repr(C)]
+pub struct AiVertexWeight {
+    pub vertex_id: c_uint, //unsigned int mVertexId;
+    pub weight: f32,       //ai_real mWeight;
+}
+
+#[repr(C)]
+pub struct AiBone {
+    pub name: AiString,               //C_STRUCT aiString mName;
+    pub num_weights: c_uint,          //unsigned int mNumWeights;
+    pub weights: *mut AiVertexWeight, //C_STRUCT aiVertexWeight *mWeights;
+    pub offset_matrix: AiMatrix4x4,   //C_STRUCT aiMatrix4x4 mOffsetMatrix;
+}
+
 pub const AI_MAX_NUMBER_OF_COLOR_SETS: usize = 0x8;
 pub const AI_MAX_NUMBER_OF_TEXTURECOORDS: usize = 0x8;
 
@@ -130,13 +175,13 @@ pub struct AiMesh {
     pub num_uv_components: [c_uint; AI_MAX_NUMBER_OF_TEXTURECOORDS], // unsigned int mNumUVComponents[AI_MAX_NUMBER_OF_TEXTURECOORDS];
     pub faces: *mut AiFace,                                          // C_STRUCT aiFace* mFaces;
     pub num_bones: c_uint,                                           // unsigned int mNumBones;
-    pub bones: *mut c_void,                                          // C_STRUCT aiBone** mBones;
+    pub bones: *mut AiBone,                                          // C_STRUCT aiBone** mBones;
     pub material_index: c_uint,                                      // unsigned int mMaterialIndex;
     pub name: AiString,                                              // C_STRUCT aiString mName;
     pub num_anim_meshes: c_uint,                                     // unsigned int mNumAnimMeshes;
-    pub anim_meshes: *mut *mut c_void, // C_STRUCT aiAnimMesh** mAnimMeshes;
-    pub method: c_uint,                // unsigned int mMethod;
-    pub aabb: AiAABB,                  // C_STRUCT aiAABB mAABB;
+    pub anim_meshes: *mut *mut AiAnimMesh, // C_STRUCT aiAnimMesh** mAnimMeshes;
+    pub method: c_uint,                    // unsigned int mMethod;
+    pub aabb: AiAABB,                      // C_STRUCT aiAABB mAABB;
 }
 
 impl AiMesh {
@@ -148,7 +193,7 @@ impl AiMesh {
         }
     }
 
-    pub fn verts(&self) -> &[AiVector3D] {
+    pub fn vertices(&self) -> &[AiVector3D] {
         assert!(!self.vertices.is_null());
         unsafe { slice::from_raw_parts(self.vertices, self.num_vertices as _) }
     }
@@ -187,6 +232,38 @@ impl AiMesh {
 
             (face_indices[0], face_indices[1], face_indices[2])
         })
+    }
+
+    pub fn bones(&self) -> &[AiBone] {
+        assert!(!self.bones.is_null());
+        unsafe { slice::from_raw_parts(self.bones, self.num_bones as usize) }
+    }
+
+    pub fn num_anim_meshes(&self) -> usize {
+        self.num_anim_meshes as _
+    }
+
+    pub fn anim_mesh_at_index(&self, index: usize) -> &AiAnimMesh {
+        assert!(!self.anim_meshes.is_null());
+        let meshes =
+            unsafe { slice::from_raw_parts(self.anim_meshes, self.num_anim_meshes as usize) };
+        unsafe { meshes[index].as_ref().unwrap() }
+    }
+
+    // pub fn anim_meshes(&self) -> impl Iterator<Item = &'a AiAnimMesh> + 'a {
+    //     let meshes =
+    //         unsafe { slice::from_raw_parts(self.anim_meshes, self.num_anim_meshes as usize) };
+    //     meshes.iter().map(|p| unsafe { p.as_ref().unwrap() })
+    // }
+}
+
+impl AiAnimMesh {
+    pub fn name(&self) -> String {
+        unsafe {
+            CStr::from_ptr(self.name.data.as_ptr() as _)
+                .to_string_lossy()
+                .into_owned()
+        }
     }
 }
 
@@ -360,8 +437,8 @@ impl<'a> Scene<'a> {
             };
             aiAttachLogStream(&log_stream);
 
-            let flags = AiPostProcessSteps::AI_PROCESS_PRESET_TARGET_REALTIME_MAX_QUALITY.bits
-                | AiPostProcessSteps::AI_PROCESS_PRE_TRANSFORM_VERTICES.bits;
+            let flags = AiPostProcessSteps::AI_PROCESS_PRESET_TARGET_REALTIME_MAX_QUALITY.bits;
+                //| AiPostProcessSteps::AI_PROCESS_PRE_TRANSFORM_VERTICES.bits
             let scene_ptr = aiImportFile(path.as_ptr() as _, flags);
             aiDetachAllLogStreams();
 
